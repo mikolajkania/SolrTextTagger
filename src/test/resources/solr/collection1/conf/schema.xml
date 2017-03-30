@@ -55,7 +55,6 @@
         <tokenizer class="solr.StandardTokenizerFactory" />
         <filter class="solr.ASCIIFoldingFilterFactory"/>
         <filter class="solr.LowerCaseFilterFactory"/>
-
         <filter class="org.opensextant.solrtexttagger.ConcatenateFilterFactory" />
       </analyzer>
       <analyzer type="query">

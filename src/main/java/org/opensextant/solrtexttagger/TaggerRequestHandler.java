@@ -22,19 +22,20 @@
 
 package org.opensextant.solrtexttagger;
 
+import com.google.common.collect.Sets;
 import com.google.common.io.CharStreams;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.core.StopFilterFactory;
 import org.apache.lucene.analysis.util.TokenFilterFactory;
+import org.apache.lucene.document.Document;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.ReaderUtil;
+import org.apache.lucene.index.Term;
 import org.apache.lucene.index.Terms;
 import org.apache.lucene.queries.function.FunctionValues;
 import org.apache.lucene.queries.function.ValueSource;
-import org.apache.lucene.search.DocIdSetIterator;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Query;
+import org.apache.lucene.search.*;
 import org.apache.lucene.util.BitSetIterator;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.FixedBitSet;
@@ -98,6 +99,10 @@ public class TaggerRequestHandler extends RequestHandlerBase {
   public static final String HTML_OFFSET_ADJUST = "htmlOffsetAdjust";
   /** Request parameter. */
   public static final String NON_TAGGABLE_TAGS = "nonTaggableTags";
+  /** Request parameter. */
+  public static final String DOCUMENT_ID = "documentId";
+  /** Request parameter. */
+  public static final String DOCUMENT_FIELD = "documentField";
 
   private final Logger log = LoggerFactory.getLogger(getClass());
 
@@ -127,6 +132,9 @@ public class TaggerRequestHandler extends RequestHandlerBase {
     final boolean xmlOffsetAdjust = req.getParams().getBool(XML_OFFSET_ADJUST, false);
     final String nonTaggableTags = req.getParams().get(NON_TAGGABLE_TAGS);
 
+    final String indexedDocId = req.getParams().get(DOCUMENT_ID, null);
+    final String indexedDocField = req.getParams().get(DOCUMENT_FIELD, null);
+
     //--Get posted data
     Reader inputReader = null;
     Iterable<ContentStream> streams = req.getContentStreams();
@@ -140,9 +148,9 @@ public class TaggerRequestHandler extends RequestHandlerBase {
             getClass().getSimpleName()+" does not support multiple ContentStreams");
       }
     }
-    if (inputReader == null) {
+    if (inputReader == null && indexedDocId == null) {
       throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
-          getClass().getSimpleName()+" requires text to be POSTed to it");
+          getClass().getSimpleName()+" requires text to be POSTed to it or document to retrieve id.");
     }
     final String inputString;//only populated if needed
     if (addMatchText || xmlOffsetAdjust || htmlOffsetAdjust) {
@@ -161,9 +169,21 @@ public class TaggerRequestHandler extends RequestHandlerBase {
     final FixedBitSet matchDocIdsBS = new FixedBitSet(searcher.maxDoc());
     final List tags = new ArrayList(2000);
 
+    //-- GET indexed document data if available
+    //todo pass param with docId or sth to locate doc
+    //todo should inputstring be set?
+    //todo check another paths
+    String title = null;
+    if (indexedDocId != null) {
+      TermQuery query = new TermQuery(new Term("id", indexedDocId));
+      final TopDocs topDocs = searcher.search(query, 1);
+      final Document doc = searcher.doc(topDocs.scoreDocs[0].doc, Sets.newHashSet(indexedDocField));  //todo better retrieval
+      title = doc.get(indexedDocField);
+    }
+
     try {
       Analyzer analyzer = req.getSchema().getField(indexedField).getType().getQueryAnalyzer();
-      try (TokenStream tokenStream = analyzer.tokenStream("", inputReader)) {
+      try (TokenStream tokenStream = getTokenStream(analyzer, inputReader, title)) {
         Terms terms = searcher.getSlowAtomicReader().terms(indexedField);
         if (terms == null)
           throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
@@ -225,7 +245,8 @@ public class TaggerRequestHandler extends RequestHandlerBase {
         tagger.process();
       }
     } finally {
-      inputReader.close();
+      if (inputReader != null)  //todo bad design, change it
+        inputReader.close();
     }
     rsp.add("tagsCount",tags.size());
     rsp.add("tags", tags);
@@ -234,6 +255,14 @@ public class TaggerRequestHandler extends RequestHandlerBase {
 
     //Solr's standard name for matching docs in response
     rsp.add("response", getDocList(rows, matchDocIdsBS));
+  }
+
+  private TokenStream getTokenStream(Analyzer analyzer, Reader inputReader, String indexedDocTitle) {
+    if (indexedDocTitle != null) {
+      return analyzer.tokenStream("", indexedDocTitle);
+    } else {
+      return analyzer.tokenStream("", inputReader);
+    }
   }
 
   private OffsetCorrector initOffsetCorrector(boolean htmlOffsetAdjust, boolean xmlOffsetAdjust,
