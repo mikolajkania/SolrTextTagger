@@ -98,6 +98,8 @@ public class TaggerRequestHandler extends RequestHandlerBase {
   public static final String HTML_OFFSET_ADJUST = "htmlOffsetAdjust";
   /** Request parameter. */
   public static final String NON_TAGGABLE_TAGS = "nonTaggableTags";
+  /** Request parameter. */
+  public static final String TEXT_TO_TAG = "textToTag";
 
   private final Logger log = LoggerFactory.getLogger(getClass());
 
@@ -126,6 +128,7 @@ public class TaggerRequestHandler extends RequestHandlerBase {
     final boolean htmlOffsetAdjust = req.getParams().getBool(HTML_OFFSET_ADJUST, false);
     final boolean xmlOffsetAdjust = req.getParams().getBool(XML_OFFSET_ADJUST, false);
     final String nonTaggableTags = req.getParams().get(NON_TAGGABLE_TAGS);
+    final String textToTag = req.getParams().get(TEXT_TO_TAG);
 
     //--Get posted data
     Reader inputReader = null;
@@ -141,8 +144,12 @@ public class TaggerRequestHandler extends RequestHandlerBase {
       }
     }
     if (inputReader == null) {
-      throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
-          getClass().getSimpleName()+" requires text to be POSTed to it");
+      if (textToTag != null) {
+        inputReader = new StringReader(textToTag);
+      } else {
+        throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
+                getClass().getSimpleName() + " requires text to be POSTed to it");
+      }
     }
     final String inputString;//only populated if needed
     if (addMatchText || xmlOffsetAdjust || htmlOffsetAdjust) {
