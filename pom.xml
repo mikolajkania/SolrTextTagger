@@ -70,7 +70,7 @@
      For Solr 5.3 - 6.2.1       use tagger version 2.3, tag: solr-text-tagger-2.3
      For Solr 6.3               use tagger version 2.4-SNAPSHOT
     -->
-    <solr.version>6.3.0</solr.version>
+    <solr.version>6.6.0</solr.version>
   </properties>
 
   <prerequisites>
